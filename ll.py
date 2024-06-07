@@ -5,28 +5,49 @@ from itertools import zip_longest, islice
 from PIL import Image
 from collections import Counter
 from collections import namedtuple
+from decimal import Decimal
 from math import *
+import sys
+import os
+from tkinter import W
+import turtle
 symb = 'ъ'
+window = 15
 def entrop(ar):
     ent = 0
     for x in ar:
         ent-=x*log2(x)
-    return entrop
-def RLE(s):
-    k = 1
-    l = []
-    for i in range(1,len(s)):
-        if (s[i] == s[i-1]):
-            k+=1
+    return ent
+def rle(s):
+    encoded = []
+    count = 1
+    flag = chr(256)
+    strlen = len(s)
+    for i in range(1, strlen):
+        if s[i] == s[i - 1]:
+            count += 1
         else:
-            if (k!=1):
-                l.append(str(k))
-            l.append(s[i-1])
-            k = 1
-    if (k!=1):
-        l.append(str(k))
-    l.append(s[len(s)-1])
-    return ''.join(l)
+            if count == 1:
+                encoded.append(s[i - 1])
+            else:
+                encoded.append(count)
+                encoded.append(flag)
+                encoded.append(s[i - 1])
+            count = 1
+    if count == 1:
+        encoded.append(s[len(s) - 1])
+    else:
+        encoded.append(count)
+        encoded.append(flag)
+        encoded.append(s[len(s) - 1])
+    res = ''
+    for i in encoded:
+        if (i==flag):
+            res += flag
+
+        else:
+            res += str(i) + ' '
+    return res
 def RLEimg(s):
     k = 1
     l = []
@@ -54,7 +75,6 @@ def imgtoraw(img):
     #imgar = np.mean(imgar,axis=1)
     imgar = imgar.astype(np.uint8)
     return imgar
-
 def to_int_keys_best(l):
     seen = set()
     ls = []
@@ -78,12 +98,10 @@ def BWT(s):
     for x in line[0]:
         code.append(s[x-1])
     return [code, line[1]]
-
-#
-#     data.sort()
-#     ind = data.index(s)
-#     l = "".join([data[i][-1] for i in range(len(data))])
-#     return (l,ind)
+    # s.sort()
+    # ind = data.index(s)
+    # l = "".join([data[i][-1] for i in range(len(data))])
+    # return (l,ind)
 def inverse_BWT(m):
     mas = m[0]
     ind = m[1]
@@ -115,7 +133,6 @@ def MTF(s):
         res.append(str(ind))
         alp = alp[ind] + alp[:ind] + alp[ind+1:]
     return [res,alp]
-
 def inv_MTF(a,b):
     alp = ''.join(sorted(list(b)))
     s = []
@@ -123,15 +140,15 @@ def inv_MTF(a,b):
         s.append(alp[int(x)])
         alp = alp[int(x)] + alp[:int(x)] + alp[int(x) + 1:]
     return ''.join(s)
-def p(s):
+def probab(s):
     n = sorted(set(s), key=lambda x: x.lower())
-    d = {}
+    d = []
     for x in n:
         coun = 0
         for i in s:
             if (i == x):
                 coun+=1
-        d[x] = coun/len(s)
+        d.append(coun/len(s))
     return d
 def arifm(s,d):
     mas = [0]*(len(d)+1)
@@ -209,21 +226,174 @@ def reverseBWT(m):
         j = right[j]
     ans.reverse()
     return ans
-def huffmandec(encoded, code):  # функция декодирования исходной строки по кодам Хаффмана
-    sx =[]  # инициализируем массив символов раскодированной строки
-    enc_ch = ""  # инициализируем значение закодированного символа
-    for ch in encoded:  # обойдем закодированную строку по символам
-        enc_ch += ch  # добавим текущий символ к строке закодированного символа
-        for dec_ch in code:  # постараемся найти закодированный символ в словаре кодов
-            if code.get(dec_ch) == enc_ch:  # если закодированный символ найден,
-                sx.append(dec_ch)  # добавим значение раскодированного символа к массиву раскодированной строки
-                enc_ch = ""  # обнулим значение закодированного символа
+def count_probability(data):  # find probability for Arithmetic coding
+    num = 0
+    sr = ""
+    dictionary = []
+    for i in data:
+        if (sr.count(i) == 0):
+            k = data.count(i)
+            num += k
+            dictionary.append((i, k))
+            sr += i
+    dictionary.sort(key=lambda x: x[1], reverse=True)
+
+    probability = []
+    indices = {}
+    k = 0
+
+    for i in range(len(dictionary)):
+        probability.append(dictionary[i][1] / num)
+        indices[dictionary[i][0]] = k
+        k += 1
+
+    return probability, indices
+
+
+def read_probability(decode):
+    file = open("Arithmetic_probability.txt", "r", encoding="utf-8")  # get probability from txt
+    data = file.read()
+    probability = []
+    indices = {}
+    sr = ""
+    for i in data[6:]:
+        if (i != chr(2)):
+            sr += i
+        else:
+            break
+    num = int(sr)
+    ln = len(sr)
+    sr = ""
+    n = False
+    k = 0
+    sym = ''
+
+    for i in data[7 + ln:]:
+        if (i == '='):
+            n = True
+        elif (i != chr(2) and n):
+            sr += i
+        elif (i == chr(2)):
+            n = False
+            probability.append(int(sr) / num)
+            sr = ""
+            if (decode):
+                indices[k] = sym
+                k += 1
+        else:
+            if (decode):
+                sym = i
+            else:
+                indices[i] = k
+                k += 1
+    return probability, indices
+
+def arithmetic():  # Arithmetic coding for double
+    file = open("C:/Users/user/Desktop/text.txt", "r", encoding="utf-8")
+    file2 = open("C:/Users/user/Desktop/textout.txt", "w", encoding="utf-8")
+    data = file.read()
+    probability, indices = count_probability(data)
+    intervals = [sum(probability[:i]) for i in range(len(probability) + 1)]
+    Left = 0
+    Right = 1
+    length = Right - Left
+    num = 0
+    double_list = []
+    num_list = []
+
+    print("")
+    i = 0
+    while i < len(data):
+        length = Right - Left
+        Left, Right = Left + intervals[indices[data[i]]] * length, Left + intervals[indices[data[i]] + 1] * length
+        print(str(num) + " " + str(Left) + " " + str(Right))
+        for j in range(len(indices)):
+            L, R = Left + intervals[j] * length, Left + intervals[j + 1] * length
+            if (L == R):
+                print("Error may occur")
+                double_list.append(tmp)
+                Left = 0
+                Right = 1
+                num_list.append(num)
+                num = -1
+                i -= 1
                 break
-    return "".join(sx)  # вернем значение раскодированной строки
+        i += 1
+        num += 1
+        tmp = (Left + Right) / 2
+    double_list.append((Left + Right) / 2)
+    num_list.append(num)
+    print("\n")
+    for i in range(len(double_list)):
+        print(str(num_list[i]) + " " + str(double_list[i]))
+        file2.write(str(num_list[i]) + "," + str(double_list[i]) + ",")
+    file.close()
+    file2.close()
+
+
+def decode_arithmetic():
+    file = open("textout.txt", "r", encoding="utf-8")  # decode Arithmetic coding
+    file2 = open("text.txt", "w", encoding="utf-8")
+
+    probability, indices = read_probability(True)
+    sr = ""
+    double_list = []
+    num_list = []
+    data = file.read()
+
+    nm = True
+    for i in data:
+        if (i != ","):
+            sr += i
+        elif (nm):
+            num_list.append(int(sr))
+            sr = ""
+            nm = False
+        else:
+            double_list.append(Decimal(sr))
+            sr = ""
+            nm = True
+
+    intervals = [sum(probability[:i]) for i in range(len(probability) + 1)]
+    data2 = ""
+    for c in range(len(double_list)):
+        Left = 0
+        Right = 1
+        number = double_list[c]
+        num = num_list[c]
+        j = 0
+        changing_intervals = intervals
+
+        while (Left != Right and j < num):
+            index_interval = sum([number > i for i in changing_intervals]) - 1
+            data2 = data2 + indices[index_interval]
+            Left = changing_intervals[index_interval]
+            Right = changing_intervals[index_interval + 1]
+            length = Right - Left
+            changing_intervals = [Left + length * intervals[i] for i in range(len(intervals))]
+            print(changing_intervals)
+            j += 1
+
+    print("\n" + data2)
+    file2.write(data2)
+    file.close()
+    file2.close()
+
+def huffmandec(encoded, code):
+    sx =[]
+    enc_ch = ""
+    for ch in encoded:
+        enc_ch += ch
+        for dec_ch in code:
+            if code.get(dec_ch) == enc_ch:
+                sx.append(dec_ch)
+                enc_ch = ""
+                break
+    return "".join(sx)
 class Node(namedtuple("Node", ["left", "right"])):
     def walk(self, code, acc):
-        self.left.walk(code, acc + "0")  # пойти в левого потомка, добавив к префиксу "0"
-        self.right.walk(code, acc + "1")  # пойти в правого потомка, добавив к префиксу "1"
+        self.left.walk(code, acc + "0")
+        self.right.walk(code, acc + "1")
 class Leaf(namedtuple("Leaf", ["char"])):
     def walk(self, code, acc):
         code[self.char] = acc or "0"
@@ -243,121 +413,103 @@ def huffman(s):
         [(_freq, _count, root)] = h
         root.walk(code, "")
     return code
+def findMatch(buf, pos,s):
+    flag = 0
+    i = 0
+    l = s[pos]
+    length = offset = 0
+    while flag!=-1:
+        flag = buf.find(l)
+        length = i
+        if (flag!=-1):
+            offset = pos - flag
+        i+=1
+        l += s[pos + i]
+    return offset, length
+def find_longest_match(data, current_position):
+    end_of_buffer = min(current_position + 258, len(data))
+    best_match_distance = -1
+    best_match_length = -1
 
-def longest_prefix_from(Left, Right):
-    LongestPrefixLength = 0
-    LongestPrefixPos = -1
-    while 1:
-        PrefixLength = LongestPrefixLength+1
-        if PrefixLength >= len(Right):
-            break
-        Prefix = Right[0: PrefixLength]
-        PrefixPos = Left.find(Prefix)
-        if PrefixPos == -1:
-            break
-        LongestPrefixLength = PrefixLength
-        LongestPrefixPos = PrefixPos
-    return (LongestPrefixLength, LongestPrefixPos)
-def codeBufferLZ77(Buffer):
-    Result = []
-    CodePos = 0
-    while CodePos < len(Buffer):
-        Left = Buffer[0:CodePos]
-        Right = Buffer[CodePos:]
-        (PrefixLength, PrefixPos) = longest_prefix_from(Left, Right)
-        if (PrefixLength == 0):
-            Result.append(Buffer[CodePos])
-            CodePos = CodePos+1
+    for j in range(current_position - 1, max(current_position - 255, -1), -1):
+        match_length = 0
+        while (match_length < (end_of_buffer - current_position) and
+               current_position + match_length < len(data) and
+               j + match_length < len(data) and
+               data[j + match_length] == data[current_position + match_length]):
+            match_length += 1
+
+        if match_length > best_match_length:
+            best_match_distance = current_position - j
+            best_match_length = match_length
+
+    return best_match_distance, best_match_length
+
+def lz77_encode(data):
+    i = 0
+    output = []
+    while i < len(data):
+        match_distance, match_length = find_longest_match(data, i)
+
+        if match_distance > 0 and match_length > 0 and i + match_length < len(data):
+            output.append([match_distance, match_length, data[i + match_length]])
+            i += match_length + 1
         else:
-            Result.append((PrefixLength, CodePos-PrefixPos))
-            CodePos = CodePos + PrefixLength
-    return Result
-def lz77code(input_filename, output_filename, WindowSize):
-    input_file = open(input_filename, 'r')
-    CodedText = []
-    while 1:
-        Buffer = input_file.read(WindowSize)
-        if Buffer == '':
-            break
-        Code = codeBufferLZ77(Buffer)
-        CodedText += Code
-    input_file.close()
-    output_file = open(output_filename, 'wb')
-    pickle.dump(CodedText, output_file)
-    output_file.close()
-def lz77decode(input_filename, output_filename):
-    input_file = open(input_filename, 'rb')
-    CodedList = pickle.load(input_file)
-    DecodedText = ''
-    Pos = 0
-    for Value in CodedList:
-        if isinstance(Value, str):
-            DecodedText = DecodedText+Value
-            Pos = Pos + 1
+            output.append([0, 0, data[i]])
+            i += 1
+
+    return [(item[0], item[1], item[2]) for item in output]
+
+def lz77_decode(encoded_data):
+    output = []
+    for offset, length, symbol in encoded_data:
+        if offset == 0 and length == 0:
+            output.append(symbol)
         else:
-            (PrefixLength, Shift) = Value
-            PrefixPos = Pos-Shift
-            DecodedText += DecodedText[PrefixPos:PrefixPos+PrefixLength]
-            Pos = Pos + PrefixLength
-    output_file = open(output_filename, 'w')
-    output_file.write(DecodedText)
-    output_file.close()
-print(longest_prefix_from('asddsafsg', 'asdjghmvbnv'))
-print(codeBufferLZ77('ababgsdfghhsdafaasdasd'))
-lz77code('in.txt', 'code.txt', 100)
-lz77decode('code.txt', 'decode.txt')
-#print(code_to_char)
+            for j in range(length):
+                output.append(output[-offset])
+            output.append(symbol)
+    return ''.join(output)
 
-# s = input()
-# code = huffman(s)  # кодируем строку
-# encoded = "".join(code[ch] for ch in s)  # отобразим закодированную версию, отобразив каждый символ
-# print(huffmandec(encoded, code))
-# # в соответствующий код и конкатенируем результат
-# print(len(code), len(encoded))  # выведем число символов и длину закодированной строки
-# for ch in sorted(code):  # обойдем символы в словаре в алфавитном порядке с помощью функции sorted()
-#     print("{}: {}".format(ch, code[ch]))  # выведем символ и соответствующий ему код
-# print(encoded)  # выведем закодированную строку
+def lz77_compress(input_path, output_path):
+    with open(input_path, 'r', encoding='utf-8') as f:
+        data = f.read()
+    encoded_data = lz77_encode(data)
+    serialized_data = ''.join([chr(x[0]) + chr(x[1]) + x[2] for x in encoded_data])
+    with open(output_path, 'wb') as f:
+        f.write(serialized_data.encode('utf-8', 'surrogatepass'))
 
-# f = open("C:/Users/user/Desktop/text.txt", 'r', encoding='utf-8')
-# g = open("C:/Users/user/Desktop/textout.txt", 'w', encoding='utf-8')
-# n = f.readlines()
-# for x in n:
-#     m = p(x)
-#     g.write(str(m))
-#     b = arifm(x,m)
-#     g.write(str(b))
-# f.close()
-# g.close()
+def lz77_decompress(input_path):
+    with open(input_path, 'rb') as f:
+        data = f.read().decode('utf-8', 'surrogatepass')
+    serialized_data = [(ord(data[i]), ord(data[i + 1]), data[i + 2]) for i in range(0, len(data), 3)]
+    return lz77_decode(serialized_data)
+# f = 'C:/Users/user/Desktop/text.txt'
+# g = 'C:/Users/user/Desktop/textout.txt'
+# lz77_compress(f,g)
+# #
+#
+# arithmetic()
 #
 # f = open("C:/Users/user/Desktop/text.txt", 'r', encoding='utf-8')
 # g = open("C:/Users/user/Desktop/textout.txt", 'wb')
 # n = f.readlines()
+# m = ''
 # for x in n:
 #     bwt = BWT(x)
-#     x = "".join(bwt[0]) + symb + str(bwt[1])
-# code = huffman(n)  # кодируем строку
-# encoded = ''.join(code[ch] for ch in n)
+#     m += "".join(bwt[0]) + ' ' + str(bwt[1])
+# code = huffman(m)  # кодируем строку
+# encoded = ''.join(code[ch] for ch in m)
 # rest = len(encoded) % 8
 # encoded = '0' * rest + encoded
 # n = int(encoded, 2)
-# n = n.to_bytes(len(encoded)//8, "big")
+# n = n.to_bytes(len(encoded)//4, "big")
 # g.write(n)
 # f.close()
 # g.close()
 
-
-#  f = open("C:/Users/user/Desktop/text.txt", 'r', encoding='utf-8')
-# g = open("C:/Users/user/Desktop/textout.txt", 'w', encoding='utf-8')
-# n = f.read()
-# m = p(n)
-# code = arifm(n,m)  # кодируем строку
-# #encoded = "".join(code[ch] for ch in n)
-# g.write(str(code))
-# f.close()
-# g.close()
-#
 # f = open("C:/Users/user/Desktop/text.txt", 'r', encoding='utf-8')
-# g = open("C:/Users/user/Desktop/textout.txt", 'w', encoding='utf-8')
+# g = open("C:/Users/user/Desktop/textout.txt", 'w')
 # n = f.readlines()
 # i = 0
 # m = []
@@ -365,10 +517,8 @@ lz77decode('code.txt', 'decode.txt')
 #     bwt = BWT(x)
 #     mtf = MTF("".join(bwt[0]) + symb + str(bwt[1]))
 #     m.append("".join(bwt[0]) + symb + str(bwt[1]))
-#
 # for x in m:
-#     code = RLE(x)  # кодируем строку
-# #encoded = "".join(code[ch] for ch in n)
+#     code = rle(x)  # кодируем строку
 #     g.write(code)
 # f.close()
 # g.close()
@@ -387,89 +537,70 @@ lz77decode('code.txt', 'decode.txt')
 # rest = len(encoded) % 8
 # encoded = '0' * rest + encoded
 # m = int(encoded, 2)
-# m = m.to_bytes(len(encoded)//8, "big")
+# m = m.to_bytes(len(encoded)//4, "big")
 # g.write(m)
 # f.close()
 # g.close()
 
-# f = open("C:/Users/user/Desktop/text.txt", 'r', encoding='utf-8')
-# g = open("C:/Users/user/Desktop/textout.txt", 'w', encoding='utf-8')
-# n = f.readlines()
-# i = 0
-# m = ""
-# for x in n:
-#     bwt = BWT(x)
-#     mtf = MTF("".join(bwt[0]) + symb + str(bwt[1]))
-#     m+=("".join(mtf[0]))
-# code = arifm(m,p(m))  # кодируем строку
-# g.write(str(code))
-# f.close()
-# g.close()
+f = open("C:/Users/user/Desktop/text.txt", 'r', encoding='utf-8')
+g = open("C:/Users/user/Desktop/textout.txt", 'w')
+n = f.readline()
+s = huffman(n)
+encoded = ''.join(s[ch] for ch in n)
+mas = []
+probb = probab(n)
+print(entrop(probb))
+print(len(encoded)/len(n))
+g.write(encoded)
 
 # f = open("C:/Users/user/Desktop/text.txt", 'r', encoding='utf-8')
-# g = open("C:/Users/user/Desktop/textout.txt", 'wb')
+# g = open("C:/Users/user/Desktop/textout.bin", 'wb')
 # n = f.readlines()
 # i = 0
 # s = ''
 # for x in n:
 #     bwt = BWT(x)
 #     mtf = ''.join(MTF("".join(bwt[0]) + symb + str(bwt[1]))[0])
-#     s = s + RLE(mtf)
+#     s = s + rle(mtf)
 # code = huffman(s)  # кодируем строку
 # encoded = ''.join(code[ch] for ch in s)
 # rest = len(encoded) % 8
 # encoded = '0' * rest + encoded
 # s = int(encoded, 2)
-# y = s.to_bytes(len(encoded)//8, "big")
+# y = s.to_bytes(len(encoded)//4, "big")
 # g.write(y)
 # f.close()
 # g.close()
 
 #
+# img = Image.open("C:/Users/user/PycharmProjects/pythonProject/nelena.jpg")
+# img = img.convert("RGB")
+# np.set_printoptions(threshold=np.inf)
+# arr = imgtoraw(img)
+# arr1 = np.reshape(arr,(len(arr),len(arr[0])*3))
+# arr = np.reshape(arr,(len(arr)*len(arr[0]),3))
+# arr = np.uint(arr)
+# np.savetxt("C:/Users/user/Desktop/lab1.txt", arr1, fmt="%d")
+# R = [x[0] for x in arr]
+# G = [x[1] for x in arr]
+# B = [x[2] for x in arr]
+# g = open("C:/Users/user/Desktop/outlab1.txt", 'wb')
+# f = rle(R)
+# s = rle(G)
+# t = rle(B)
+# ff = len(f).to_bytes(4, byteorder='big')
+# ss = len(s).to_bytes(4, byteorder='big')
+# tt = len(t).to_bytes(4, byteorder='big')
+# sr = f+s+t
+# sr = sr.encode('utf-8')
+# sr = sr + ff + ss + tt
+# g.write(sr)
+# g.close()
+# img.close()
 # f = open("C:/Users/user/Desktop/text.txt", 'r', encoding='utf-8')
 # g = open("C:/Users/user/Desktop/textout.txt", 'w', encoding='utf-8')
 # n = f.readlines()
-# i = 0
-# s = ''
 # for x in n:
-#     bwt = BWT(x)
-#     mtf = ''.join(MTF("".join(bwt[0]) + symb + str(bwt[1]))[0])
-#     s = s + RLE(mtf)
-# code = arifm(s,p(s))  # кодируем строку
-# g.write(str(code))
-# f.close()
-# g.close()
-
-# res = mas[alp]
-# alp = mas[1]
-# alp = ''.join(sorted(set(s), key=lambda x: x.lower()))
-# for x in s:
-#     ind = alp.index(x)
-#     res+=str(ind)
-#     alp = alp[ind] + alp[:ind] + alp[ind+1:]
-# return [res, alp]
-
-
-# img = Image.open("C:/Users/user/Desktop/1616975653_41-p-fon-v-kletku-cherno-belii-45.png")
-# img = img.resize((100,100))
-# img = img.convert("RGB")
-# np.set_printoptions(threshold=np.inf)
-# img.save("C:/Users/user/Desktop/new.png")
-# arr = imgtoraw(img)
-# g = open("C:/Users/user/Desktop/outlab1.txt", 'w', encoding='utf-8')
-# for x in arr:
-#     x = "".join([str(x) for x in RLEimg(x)])
-#     g.write(x)
-# g.close()
-# img.close()
-
-
-
-# f = open("C:/Users/user/Desktop/inlab.txt", 'r', encoding='utf-8')
-# g = open("C:/Users/user/Desktop/outlab.txt", 'w', encoding='utf-8')
-# n = f.readlines()
-# for x in n:
-#     x = RLE(x)
-#     g.write(RLE(x))
+#     g.write(rle(x))
 # f.close()
 # g.close()
